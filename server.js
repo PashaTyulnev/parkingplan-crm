@@ -1,6 +1,7 @@
-// Parkingsoft Kunden – kleine Webapp ohne Login. Mailversand per SMTP (Zugangsdaten in .env).
+// Parkingplan – Webapp mit Login. Mailversand per SMTP. Die Zugangsdaten werden in der App unter „Einstellungen“
+// gepflegt und in data/einstellungen.json gespeichert (nicht im Git).
 // Start: node server.js  ->  http://localhost:3100
-// Die App lauscht nur lokal. Das Tracking-Pixel liegt auf dem Server (NUXT_TRACKING_URL), die Öffnungen holt die App dort ab.
+// Das Tracking-Pixel liegt auf dem Server (NUXT_TRACKING_URL), die Öffnungen holt die App dort ab.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -8,13 +9,16 @@ const crypto = require('crypto');
 const util = require('util');
 const nodemailer = require('nodemailer');
 const { istGesperrt } = require('./sperrliste');
+const auth = require('./auth');
 
 const PORT = process.env.PORT || 3100;
+const HOST = process.env.HOST || '127.0.0.1';
 const SYNC_MS = Number(process.env.SYNC_MS ?? 60000);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'kunden.json');
 const VERSAND_FILE = path.join(DATA_DIR, 'versand.json');
 const VORLAGEN_FILE = path.join(DATA_DIR, 'vorlagen.json');
+const EINSTELLUNGEN_FILE = path.join(DATA_DIR, 'einstellungen.json');
 const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 2000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -63,13 +67,48 @@ function saveVorlagen(list) {
   fs.renameSync(tmp, VORLAGEN_FILE);
 }
 
-// .env wird bei jedem Zugriff neu gelesen, damit ein eingetragenes Passwort ohne Neustart gilt
-function config() {
-  let file = {};
+// Einstellungen, die in der App gepflegt werden. geheim = der Wert wird nie an den Browser zurückgegeben.
+const EINSTELLUNGEN = [
+  { key: 'NUXT_SMTP_HOST' }, { key: 'NUXT_SMTP_PORT' }, { key: 'NUXT_SMTP_USER' }, { key: 'NUXT_SMTP_PASS', geheim: true },
+  { key: 'NUXT_SMTP_FROM_NAME' }, { key: 'NUXT_CONTACT_TO' }, { key: 'NUXT_KOPIE_AN' },
+  { key: 'NUXT_TRACKING_URL' }, { key: 'NUXT_TRACKING_TOKEN', geheim: true }, { key: 'NUXT_TEST_EMPFAENGER' },
+];
+
+function envDatei() {
   try {
-    file = util.parseEnv(fs.readFileSync(path.join(__dirname, '.env'), 'utf8'));
-  } catch {}
-  return { ...file, ...process.env };
+    return util.parseEnv(fs.readFileSync(path.join(__dirname, '.env'), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function loadEinstellungen() {
+  try {
+    return JSON.parse(fs.readFileSync(EINSTELLUNGEN_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function saveEinstellungen(e) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(EINSTELLUNGEN_FILE + '.tmp', JSON.stringify(e, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(EINSTELLUNGEN_FILE + '.tmp', EINSTELLUNGEN_FILE);
+}
+
+// Einmalig: vorhandene Werte aus .env übernehmen, danach gilt nur noch data/einstellungen.json
+function einstellungenEinrichten() {
+  if (loadEinstellungen()) return;
+  const quelle = { ...envDatei(), ...process.env };
+  const e = {};
+  for (const { key } of EINSTELLUNGEN) e[key] = String(quelle[key] || '').trim();
+  saveEinstellungen(e);
+  if (Object.values(e).some(Boolean)) console.log('Einstellungen aus .env nach data/einstellungen.json übernommen. Die .env wird dafür nicht mehr gebraucht.');
+}
+
+// Wird bei jedem Zugriff neu gelesen, damit Änderungen in der App sofort gelten
+function config() {
+  return { ...envDatei(), ...process.env, ...(loadEinstellungen() || {}) };
 }
 
 // Nur echte Web-Adressen zulassen, damit nie ein falsch eingetragener Wert in den Mails landet
@@ -181,7 +220,13 @@ function clean(input) {
 }
 
 function send(res, code, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(code, { 'Content-Type': type });
+  res.writeHead(code, {
+    'Content-Type': type,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin',
+  });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
@@ -198,30 +243,142 @@ function readBody(req) {
   });
 }
 
-// Beim ersten Start die recherchierten Betreiber übernehmen
-if (!fs.existsSync(DATA_FILE)) {
+function weiterleiten(res, ziel) {
+  res.writeHead(302, { Location: ziel, 'Cache-Control': 'no-store' });
+  res.end();
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function warteText(bis) {
+  return `Zu viele Fehlversuche. Bitte in ${Math.ceil((bis - Date.now()) / 60000)} Minuten erneut versuchen.`;
+}
+
+// Beim ersten Start die recherchierten Betreiber übernehmen (falls vorhanden)
+if (!fs.existsSync(DATA_FILE) && fs.existsSync(path.join(DATA_DIR, 'recherche.json'))) {
   const seed = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'recherche.json'), 'utf8'));
   save(seed.filter((s) => !istGesperrt(s)).map((s) => ({ id: crypto.randomUUID(), ...clean(s), erstellt: new Date().toISOString() })));
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
-const LOKAL = /^(localhost|127\.0\.0\.1)(:\d+)?$/i;
-
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  const cfg = config();
 
-  if (url.pathname.startsWith('/api/')) {
-    // Schützt vor Zugriffen über Tunnel/DNS-Rebinding und vor Formular-Posts fremder Webseiten
-    if (!LOKAL.test(req.headers.host || '')) return send(res, 403, { error: 'Nur lokal erlaubt' });
-    if (req.method !== 'GET' && !(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: 'JSON erwartet' });
+  // Nur JSON annehmen: verhindert, dass fremde Webseiten per Formular-Post Aktionen auslösen
+  if (url.pathname.startsWith('/api/') && req.method !== 'GET' && !(req.headers['content-type'] || '').startsWith('application/json')) {
+    return send(res, 415, { error: 'JSON erwartet' });
+  }
+
+  const benutzer = auth.sitzung(DATA_DIR, req);
+
+  if (url.pathname === '/api/login' && req.method === 'POST') {
+    const ip = auth.clientIp(req, cfg);
+    const bis = auth.gesperrtBis(ip);
+    if (bis) return send(res, 429, { error: warteText(bis) });
+    let body;
+    try { body = await readBody(req); } catch { return send(res, 400, { error: 'Ungültige Anfrage' }); }
+    const b = auth.laden(DATA_DIR);
+    const passtPw = await auth.passwortPruefen(b, body.passwort);
+    const passtName = Boolean(b) && String(body.benutzer || '').trim().toLowerCase() === b.benutzer.toLowerCase();
+    if (!passtPw || !passtName) {
+      auth.fehlversuch(ip);
+      return send(res, 401, { error: 'Benutzername oder Passwort falsch' });
+    }
+    auth.erfolg(ip);
+    auth.anmelden(res, req, cfg, b);
+    return send(res, 200, { benutzer: b.benutzer });
+  }
+
+  if (url.pathname === '/login' || url.pathname === '/login.html') {
+    if (benutzer) return weiterleiten(res, '/');
+    return fs.readFile(path.join(PUBLIC_DIR, 'login.html'), (err, buf) => (err ? send(res, 500, 'Fehler', 'text/plain') : send(res, 200, buf, MIME['.html'])));
+  }
+
+  // Ab hier nur mit gültiger Sitzung
+  if (!benutzer) {
+    if (url.pathname.startsWith('/api/')) return send(res, 401, { error: 'Bitte anmelden' });
+    return weiterleiten(res, '/login');
+  }
+
+  if (url.pathname === '/api/logout' && req.method === 'POST') {
+    auth.abmelden(res, req, cfg);
+    return send(res, 200, { ok: true });
+  }
+
+  if (url.pathname === '/api/ich' && req.method === 'GET') return send(res, 200, { benutzer });
+
+  if (url.pathname === '/api/passwort' && req.method === 'POST') {
+    const ip = auth.clientIp(req, cfg);
+    const bis = auth.gesperrtBis(ip);
+    if (bis) return send(res, 429, { error: warteText(bis) });
+    let body;
+    try { body = await readBody(req); } catch { return send(res, 400, { error: 'Ungültige Anfrage' }); }
+    const alt = String(body.alt || ''), neu = String(body.neu || '');
+    const b = auth.laden(DATA_DIR);
+    if (!(await auth.passwortPruefen(b, alt))) {
+      auth.fehlversuch(ip);
+      return send(res, 400, { error: 'Das aktuelle Passwort ist falsch' });
+    }
+    if (neu.length < auth.MIN_LAENGE) return send(res, 400, { error: `Das neue Passwort muss mindestens ${auth.MIN_LAENGE} Zeichen haben` });
+    if (neu === alt) return send(res, 400, { error: 'Das neue Passwort muss sich vom alten unterscheiden' });
+    // Neue Version: alle anderen Sitzungen werden ungültig, diese bekommt ein neues Cookie
+    const nb = await auth.passwortSetzen(DATA_DIR, b.benutzer, neu);
+    auth.erfolg(ip);
+    auth.anmelden(res, req, cfg, nb);
+    return send(res, 200, { ok: true });
+  }
+
+  if (url.pathname === '/api/einstellungen' && req.method === 'GET') {
+    const e = loadEinstellungen() || {};
+    const werte = {}, gesetzt = {};
+    for (const { key, geheim } of EINSTELLUNGEN) {
+      if (geheim) gesetzt[key] = Boolean(e[key]);
+      else werte[key] = e[key] || '';
+    }
+    return send(res, 200, { werte, gesetzt });
+  }
+
+  if (url.pathname === '/api/einstellungen' && req.method === 'PUT') {
+    let body;
+    try { body = await readBody(req); } catch { return send(res, 400, { error: 'Ungültige Anfrage' }); }
+    const e = loadEinstellungen() || {};
+    const loeschen = new Set(Array.isArray(body.loeschen) ? body.loeschen : []);
+    for (const { key, geheim } of EINSTELLUNGEN) {
+      const wert = typeof body[key] === 'string' ? body[key].trim() : undefined;
+      if (geheim) {
+        // Leeres Feld = unverändert lassen, damit das Passwort nie zum Browser zurück muss
+        if (loeschen.has(key)) e[key] = '';
+        else if (wert) e[key] = wert;
+      } else if (wert !== undefined) e[key] = wert;
+    }
+    if (e.NUXT_SMTP_PORT && !/^\d{1,5}$/.test(e.NUXT_SMTP_PORT)) return send(res, 400, { error: 'Der SMTP-Port muss eine Zahl sein, z.B. 465 oder 587' });
+    if (e.NUXT_TRACKING_URL && !/^https?:\/\/\S+$/i.test(e.NUXT_TRACKING_URL)) return send(res, 400, { error: 'Die Tracking-Adresse muss mit https:// beginnen' });
+    for (const [key, name] of [['NUXT_CONTACT_TO', 'Antwort-Adresse'], ['NUXT_KOPIE_AN', 'Kopie an'], ['NUXT_TEST_EMPFAENGER', 'Testempfänger']]) {
+      if (e[key] && !EMAIL.test(e[key])) return send(res, 400, { error: `${name}: keine gültige E-Mail-Adresse` });
+    }
+    saveEinstellungen(e);
+    return send(res, 200, { ok: true });
+  }
+
+  if (url.pathname === '/api/einstellungen/smtp-pruefen' && req.method === 'POST') {
+    if (!smtpFertig(cfg)) return send(res, 400, { error: 'Server, Benutzer und Passwort eintragen und speichern' });
+    const transport = transportAus(cfg);
+    try {
+      await transport.verify();
+      return send(res, 200, { ok: true });
+    } catch (e) {
+      return send(res, 400, { error: `Verbindung fehlgeschlagen: ${e.message}` });
+    } finally {
+      transport.close();
+    }
   }
 
   if (url.pathname === '/api/versand' && req.method === 'GET') return send(res, 200, loadVersand());
   if (url.pathname === '/api/fortschritt' && req.method === 'GET') return send(res, 200, { laeuft: versandLaeuft, ...fortschritt });
 
   if (url.pathname === '/api/mailconfig' && req.method === 'GET') {
-    const cfg = config();
     return send(res, 200, { bereit: smtpFertig(cfg), absender: `${cfg.NUXT_SMTP_FROM_NAME || 'ParkingPlan'} <${cfg.NUXT_SMTP_USER || ''}>`, testModus: (cfg.NUXT_TEST_EMPFAENGER || '').trim(), tracking: Boolean(trackingBasis(cfg)), trackingFehler });
   }
 
@@ -260,8 +417,7 @@ http.createServer(async (req, res) => {
     let body;
     try { body = await readBody(req); } catch { return send(res, 400, { error: 'Ungültige Anfrage' }); }
     const betreff = String(body.betreff || '').trim(), text = String(body.text || '').trim(), html = String(body.html || '').trim();
-    const cfg = config();
-    if (!smtpFertig(cfg)) return send(res, 400, { error: 'SMTP nicht vollständig: NUXT_SMTP_PASS in .env eintragen' });
+    if (!smtpFertig(cfg)) return send(res, 400, { error: 'SMTP nicht vollständig: unter „Einstellungen“ Server, Benutzer und Passwort eintragen' });
     if (!betreff || !text) return send(res, 400, { error: 'Betreff und Text sind Pflicht' });
     if (versandLaeuft) return send(res, 409, { error: 'Es läuft bereits ein Versand' });
 
@@ -271,7 +427,7 @@ http.createServer(async (req, res) => {
     const uebersprungen = [];
     let ziele;
     if (istTest) {
-      if (!cfg.NUXT_CONTACT_TO) return send(res, 400, { error: 'NUXT_CONTACT_TO fehlt in .env' });
+      if (!cfg.NUXT_CONTACT_TO) return send(res, 400, { error: 'Unter „Einstellungen“ fehlt die Antwort-Adresse (dorthin geht die Testmail)' });
       ziele = [{ name: 'TEST', flughafen: 'Frankfurt', email: cfg.NUXT_CONTACT_TO }];
     } else {
       // Nur ausdrücklich ausgewählte IDs; die Adresse kommt immer aus der Liste, nie vom Client
@@ -349,12 +505,17 @@ http.createServer(async (req, res) => {
 
   // Statische Dateien
   const file = path.normalize(path.join(PUBLIC_DIR, url.pathname === '/' ? 'index.html' : url.pathname));
-  if (!file.startsWith(PUBLIC_DIR)) return send(res, 403, 'Forbidden', 'text/plain');
+  if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, 'Forbidden', 'text/plain');
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Not found', 'text/plain');
     send(res, 200, buf, MIME[path.extname(file)] || 'application/octet-stream');
   });
-}).listen(PORT, '127.0.0.1', () => console.log(`Parkingsoft Kunden läuft auf http://localhost:${PORT}`));
+});
 
-opensAbgleichen();
-setInterval(opensAbgleichen, SYNC_MS);
+(async () => {
+  einstellungenEinrichten();
+  await auth.einrichten(DATA_DIR, { ...envDatei(), ...process.env });
+  server.listen(PORT, HOST, () => console.log(`Parkingplan läuft auf http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
+  opensAbgleichen();
+  setInterval(opensAbgleichen, SYNC_MS);
+})();

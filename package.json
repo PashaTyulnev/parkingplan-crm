@@ -1,7 +1,7 @@
 {
-  "name": "parkingsoftkunden",
+  "name": "parkingplan",
   "version": "1.0.0",
-  "description": "Kleine Webapp ohne Login und ohne Abhängigkeiten, um Anbieter von Mietparkplätzen an deutschen Flughäfen (Park & Fly mit Shuttle, Valet-Parken, Parkhäuser, Flughafengesellschaften) als mögliche Kunden zu sammeln.",
+  "description": "Webapp mit Login, um Anbieter von Mietparkplätzen an deutschen Flughäfen (Park & Fly mit Shuttle, Valet-Parken, Parkhäuser, Flughafengesellschaften) als mögliche Kunden zu sammeln.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

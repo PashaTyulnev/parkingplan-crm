@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Parkingsoft Kunden</title>
+<title>Parkingplan</title>
 <style>
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
@@ -64,17 +64,32 @@
   .vorschau { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
   .vorlagen { display: flex; flex-wrap: wrap; gap: 8px; }
   .vorlagen select { flex: 1 1 180px; }
+  .konto { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+  .einstellungsseite { padding: 8px 24px 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; align-items: start; max-width: 1100px; }
+  .karte { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .karte h2 { margin: 0; font-size: 18px; }
+  .karte h3 { margin: 8px 0 0; font-size: 14px; }
+  .karte p { margin: 0; }
+  .zeile { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+  .ok { color: #17602b; }
+  @media (prefers-color-scheme: dark) { .ok { color: #6fcf8a; } }
+  @media (max-width: 640px) { .einstellungsseite { padding-left: 16px; padding-right: 16px; } }
   @media (max-width: 640px) { .vorlagenseite { grid-template-columns: 1fr; padding-left: 16px; padding-right: 16px; } form { grid-template-columns: 1fr; } header, .toolbar, .wrap { padding-left: 16px; padding-right: 16px; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>Parkingsoft – Flughafen-Parkanbieter</h1>
+  <h1>Parkingplan – Flughafen-Parkanbieter</h1>
   <nav>
     <button id="navAnbieter" class="nav">Anbieter</button>
     <button id="navVorlagen" class="nav">E-Mail-Vorlagen</button>
+    <button id="navEinstellungen" class="nav">Einstellungen</button>
   </nav>
   <span class="stats" id="stats"></span>
+  <div class="konto">
+    <span class="muted" id="ich"></span>
+    <button id="abmelden">Abmelden</button>
+  </div>
 </header>
 <section id="viewAnbieter">
 <div class="toolbar">
@@ -123,6 +138,41 @@
       <button type="button" class="primary" id="vSpeichern">Speichern</button>
     </div>
   </div>
+</section>
+
+<section id="viewEinstellungen" class="einstellungsseite" hidden>
+  <div class="karte" id="eForm">
+    <h2>E-Mail-Versand (SMTP)</h2>
+    <p class="muted">Die Werte werden nur auf dem Server in data/einstellungen.json gespeichert, nicht im Git. Passwörter werden nie angezeigt: Feld leer lassen = bleibt unverändert.</p>
+    <div class="zeile">
+      <label>SMTP-Server<input data-e="NUXT_SMTP_HOST" placeholder="z.B. smtp.example.de" autocomplete="off"></label>
+      <label>Port<input data-e="NUXT_SMTP_PORT" inputmode="numeric" placeholder="465"></label>
+    </div>
+    <label>SMTP-Benutzer (zugleich Absenderadresse)<input data-e="NUXT_SMTP_USER" autocomplete="off"></label>
+    <label>SMTP-Passwort<input data-e="NUXT_SMTP_PASS" type="password" autocomplete="new-password" data-geheim></label>
+    <label>Absendername<input data-e="NUXT_SMTP_FROM_NAME" placeholder="ParkingPlan"></label>
+    <label>Antwort-Adresse (Reply-To, bekommt auch die Testmail)<input data-e="NUXT_CONTACT_TO" type="email"></label>
+    <label>Kopie jeder Mail an (optional)<input data-e="NUXT_KOPIE_AN" type="email"></label>
+    <label>Testmodus: alle Mails nur an diese Adresse (leer = echter Versand)<input data-e="NUXT_TEST_EMPFAENGER" type="email"></label>
+    <h3>Öffnungserkennung</h3>
+    <label>Tracking-Adresse<input data-e="NUXT_TRACKING_URL" placeholder="https://…"></label>
+    <label>Tracking-Token<input data-e="NUXT_TRACKING_TOKEN" type="password" autocomplete="new-password" data-geheim></label>
+    <p id="eMeldung" role="status"></p>
+    <div class="actions">
+      <button type="button" id="ePruefen" class="left">Verbindung prüfen</button>
+      <button type="button" class="primary" id="eSpeichern">Speichern</button>
+    </div>
+  </div>
+  <form class="karte" id="pwForm">
+    <h2>Passwort ändern</h2>
+    <p class="muted">Nach der Änderung werden alle anderen angemeldeten Geräte abgemeldet.</p>
+    <input type="text" name="benutzer" autocomplete="username" hidden>
+    <label>Aktuelles Passwort<input name="alt" type="password" autocomplete="current-password" required></label>
+    <label>Neues Passwort (mindestens 10 Zeichen)<input name="neu" type="password" autocomplete="new-password" minlength="10" required></label>
+    <label>Neues Passwort wiederholen<input name="neu2" type="password" autocomplete="new-password" minlength="10" required></label>
+    <p id="pwMeldung" role="status"></p>
+    <div class="actions"><button type="submit" class="primary">Passwort ändern</button></div>
+  </form>
 </section>
 
 <dialog id="dlg">
@@ -189,7 +239,11 @@ const href = (u) => (/^https?:\/\//i.test(u) ? u : 'https://' + u);
 
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
-  if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+  if (r.status === 401) {
+    location.replace('/login');
+    throw new Error('Bitte anmelden');
+  }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return r.json();
 }
 
@@ -314,7 +368,7 @@ function csvExport() {
   const csv = '﻿' + [cols.join(';'), ...daten.map((k) => cols.map((c) => cell(k[c])).join(';'))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `parkingsoft-kunden-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `parkingplan-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
 }
 
@@ -469,21 +523,75 @@ function vorlageBearbeiten(v) {
 }
 
 async function ansicht(name) {
-  const istVorlagen = name === 'vorlagen';
-  $('#viewAnbieter').hidden = istVorlagen;
-  $('#viewVorlagen').hidden = !istVorlagen;
-  $('#stats').hidden = istVorlagen;
-  $('#navAnbieter').classList.toggle('aktiv', !istVorlagen);
-  $('#navVorlagen').classList.toggle('aktiv', istVorlagen);
-  history.replaceState(null, '', istVorlagen ? '#vorlagen' : '#');
-  if (istVorlagen) {
+  for (const [n, view, nav] of [['anbieter', '#viewAnbieter', '#navAnbieter'], ['vorlagen', '#viewVorlagen', '#navVorlagen'], ['einstellungen', '#viewEinstellungen', '#navEinstellungen']]) {
+    $(view).hidden = n !== name;
+    $(nav).classList.toggle('aktiv', n === name);
+  }
+  $('#stats').hidden = name !== 'anbieter';
+  history.replaceState(null, '', name === 'anbieter' ? '#' : '#' + name);
+  if (name === 'vorlagen') {
     await vorlagenLaden();
     vorlageBearbeiten(vorlagen.find((v) => v.id === vAktuell) || vorlagen[0]);
   }
+  if (name === 'einstellungen') await einstellungenLaden();
 }
+
+function meldung(sel, text, gut) {
+  $(sel).textContent = text;
+  $(sel).className = gut ? 'ok' : 'warn';
+}
+
+async function einstellungenLaden() {
+  const { werte, gesetzt } = await api('GET', '/api/einstellungen');
+  document.querySelectorAll('[data-e]').forEach((el) => {
+    const key = el.dataset.e;
+    if (el.hasAttribute('data-geheim')) {
+      el.value = '';
+      el.placeholder = gesetzt[key] ? '•••••••• (gespeichert)' : 'nicht gesetzt';
+    } else el.value = werte[key] || '';
+  });
+  $('#eMeldung').textContent = '';
+}
+
+$('#eSpeichern').onclick = async () => {
+  const body = {};
+  document.querySelectorAll('[data-e]').forEach((el) => { body[el.dataset.e] = el.value; });
+  try {
+    await api('PUT', '/api/einstellungen', body);
+    await einstellungenLaden();
+    mailcfg = await api('GET', '/api/mailconfig');
+    meldung('#eMeldung', 'Gespeichert.', true);
+  } catch (err) { meldung('#eMeldung', err.message); }
+};
+$('#ePruefen').onclick = async () => {
+  meldung('#eMeldung', 'Prüfe Verbindung …', true);
+  try {
+    await api('POST', '/api/einstellungen/smtp-pruefen', {});
+    meldung('#eMeldung', 'Verbindung zum SMTP-Server klappt (gespeicherte Werte).', true);
+  } catch (err) { meldung('#eMeldung', err.message); }
+};
+$('#pwForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.neu.value !== f.neu2.value) return meldung('#pwMeldung', 'Die neuen Passwörter stimmen nicht überein.');
+  try {
+    await api('POST', '/api/passwort', { alt: f.alt.value, neu: f.neu.value });
+    f.reset();
+    meldung('#pwMeldung', 'Passwort geändert.', true);
+  } catch (err) { meldung('#pwMeldung', err.message); }
+};
+$('#abmelden').onclick = async () => {
+  await api('POST', '/api/logout', {}).catch(() => {});
+  location.replace('/login');
+};
+api('GET', '/api/ich').then(({ benutzer }) => {
+  $('#ich').textContent = benutzer;
+  $('#pwForm').benutzer.value = benutzer;
+}).catch(() => {});
 
 $('#navAnbieter').onclick = () => ansicht('anbieter');
 $('#navVorlagen').onclick = () => ansicht('vorlagen');
+$('#navEinstellungen').onclick = () => ansicht('einstellungen');
 $('#vHtml').addEventListener('input', vorschauZeigen);
 $('#vNeu').onclick = () => vorlageBearbeiten(null);
 $('#vListe').onclick = (e) => {
@@ -507,7 +615,7 @@ $('#vLoeschen').onclick = async () => {
   await vorlagenLaden();
   vorlageBearbeiten(vorlagen[0]);
 };
-ansicht(location.hash === '#vorlagen' ? 'vorlagen' : 'anbieter');
+ansicht(['#vorlagen', '#einstellungen'].includes(location.hash) ? location.hash.slice(1) : 'anbieter');
 
 $('#alleWaehlen').addEventListener('change', (e) => auswahlSetzen(e.target.checked));
 $('#auswahlLeeren').onclick = () => { gewaehlt.clear(); render(); };

@@ -6,8 +6,18 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9äöüß]/g, 
 const ziffern = (s) => String(s || '').replace(/\D/g, '');
 const domain = (s) => String(s || '').toLowerCase().replace(/^.*@/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
 
+const LEER = { firmen: [], namen: [], domains: [], telefon: [] };
+
+function sperrliste() {
+  try {
+    return { ...LEER, ...JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'sperrliste.json'), 'utf8')) };
+  } catch {
+    return LEER;
+  }
+}
+
 function istGesperrt(k) {
-  const sperre = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'sperrliste.json'), 'utf8'));
+  const sperre = sperrliste();
   const inhalt = norm(`${k.name} ${k.notizen}`);
   const domains = [domain(k.email), domain(k.website)];
   const tel = ziffern(k.telefon);

@@ -1,2 +1,6 @@
+# Zugangsdaten und Laufzeitdaten gehören nicht ins Git
 .env
+.env.*
+data/
 node_modules/
+*.tmp
