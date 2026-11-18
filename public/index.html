@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parkingsoft Kunden</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+    --accent: #1f6feb; --accent-text: #fff; --danger: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1c2027; --text: #e6e8eb; --muted: #9aa3ae; --line: #2c323b; --accent: #4c8dff; --danger: #ef5350; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
+  h1 { margin: 0; font-size: 22px; }
+  .stats { color: var(--muted); }
+  .toolbar { padding: 8px 24px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input, select, textarea { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+  #suche { flex: 1 1 260px; }
+  button { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { color: var(--danger); }
+  .check { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--text); white-space: nowrap; }
+  .wrap { padding: 0 24px 32px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+  tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  td a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--line); white-space: nowrap; }
+  .s-Kontaktiert { background: #fff3cd; color: #7a5b00; }
+  .s-Interessiert { background: #d1f2d9; color: #17602b; }
+  .s-Kunde { background: #cfe3ff; color: #0b4aa8; }
+  .s-Kein { background: #f8d7da; color: #8a1c24; }
+  dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); width: min(560px, 94vw); padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  form { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  form h2 { grid-column: 1/-1; margin: 0 0 4px; font-size: 18px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.full { grid-column: 1/-1; }
+  .actions { grid-column: 1/-1; display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+  .actions .left { margin-right: auto; }
+  .mailbox { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .mailbox h2, .mailbox p { margin: 0; }
+  .mailbox h2 { font-size: 18px; }
+  #mailEmpf { margin: 0; padding-left: 18px; max-height: 130px; overflow-y: auto; }
+  .warn { color: var(--danger); }
+  [hidden] { display: none !important; }
+  nav { display: flex; gap: 6px; }
+  .nav.aktiv { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .vorlagenseite { padding: 8px 24px 32px; display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 720px); gap: 20px; align-items: start; }
+  .vorlagenliste { display: flex; flex-direction: column; gap: 8px; }
+  #vListe { display: flex; flex-direction: column; gap: 6px; }
+  #vListe button { text-align: left; overflow-wrap: anywhere; }
+  #vListe button.aktiv { border-color: var(--accent); }
+  .vorlagenform { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .vorlagenform h2, .vorlagenform p { margin: 0; }
+  .vorlagenform h2 { font-size: 18px; }
+  .vorschau { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .vorlagen { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vorlagen select { flex: 1 1 180px; }
+  @media (max-width: 640px) { .vorlagenseite { grid-template-columns: 1fr; padding-left: 16px; padding-right: 16px; } form { grid-template-columns: 1fr; } header, .toolbar, .wrap { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parkingsoft – Flughafen-Parkanbieter</h1>
+  <nav>
+    <button id="navAnbieter" class="nav">Anbieter</button>
+    <button id="navVorlagen" class="nav">E-Mail-Vorlagen</button>
+  </nav>
+  <span class="stats" id="stats"></span>
+</header>
+<section id="viewAnbieter">
+<div class="toolbar">
+  <input id="suche" type="search" placeholder="Suchen nach Name, Ort, Flughafen, E-Mail …">
+  <select id="fFlughafen"><option value="">Alle Flughäfen</option></select>
+  <select id="fTyp"><option value="">Alle Typen</option></select>
+  <select id="fStatus"><option value="">Alle Status</option></select>
+  <label class="check"><input type="checkbox" id="nurEmail"> Nur mit E-Mail</label>
+  <label class="check"><input type="checkbox" id="nurOffen"> Nur geöffnete</label>
+  <label class="check"><input type="checkbox" id="nurNeu"> Noch nicht angeschrieben</label>
+  <label class="check"><input type="checkbox" id="ohneFrankfurt"> Frankfurt ausblenden</label>
+  <select id="fVorlage" title="Versand-Filter und Öffnungen nur für diese Vorlage"><option value="">Alle Vorlagen</option></select>
+  <select id="fVersand"><option value="">Alle (Versand)</option><option value="offen">Nicht angeschrieben</option><option value="gesendet">Angeschrieben</option><option value="geoeffnet">Geöffnet</option><option value="ungeoeffnet">Nicht geöffnet</option></select>
+  <button id="csv">CSV exportieren</button>
+  <button id="auswahlLeeren" hidden>Auswahl aufheben</button>
+  <button id="mailBtn" disabled>E-Mail senden (0)</button>
+  <button class="primary" id="neu">+ Anbieter hinzufügen</button>
+</div>
+<div class="wrap">
+  <table>
+    <thead><tr>
+      <th title="Alle sichtbaren Anbieter mit E-Mail auswählen (ohne Interessiert, Kunde, Kein Interesse)"><input type="checkbox" id="alleWaehlen" aria-label="Alle auswählen"></th><th data-k="name">Name</th><th data-k="flughafen">Flughafen</th><th data-k="groesse" title="Fluggäste pro Jahr am größten Flughafen des Anbieters (ca., 2024)">Größe</th><th data-k="ort">Ort</th><th data-k="typ">Typ</th>
+      <th data-k="email">E-Mail</th><th data-k="telefon">Telefon</th><th data-k="website">Webseite</th>
+      <th data-k="status">Status</th><th data-k="geoeffnet" title="Sortieren nach letzter Öffnung">E-Mail-Versand</th><th></th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+</section>
+
+<section id="viewVorlagen" class="vorlagenseite" hidden>
+  <div class="vorlagenliste">
+    <button class="primary" id="vNeu">+ Neue Vorlage</button>
+    <div id="vListe"></div>
+  </div>
+  <div class="vorlagenform">
+    <h2 id="vTitel">Neue Vorlage</h2>
+    <label>Name der Vorlage<input id="vName" placeholder="z.B. Erstansprache"></label>
+    <label>Betreff<input id="vBetreff"></label>
+    <label>Plaintext (Pflicht, für Mailprogramme ohne HTML)<textarea id="vText" rows="10"></textarea></label>
+    <label>HTML-Version (optional)<textarea id="vHtml" rows="10" spellcheck="false"></textarea></label>
+    <div id="vVorschauBox"><span class="muted">HTML-Vorschau</span><iframe id="vVorschau" class="vorschau" sandbox="" title="HTML-Vorschau"></iframe></div>
+    <p class="muted">Platzhalter: {{name}} und {{flughafen}} werden beim Versand für jeden Empfänger ersetzt.</p>
+    <div class="actions">
+      <button type="button" class="danger left" id="vLoeschen">Löschen</button>
+      <button type="button" class="primary" id="vSpeichern">Speichern</button>
+    </div>
+  </div>
+</section>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <h2 id="dlgTitel">Anbieter</h2>
+    <label class="full">Name *<input name="name" required></label>
+    <label>Webseite<input name="website" placeholder="https://…"></label>
+    <label>E-Mail<input name="email" type="email"></label>
+    <label>Telefon<input name="telefon"></label>
+    <label>Ort<input name="ort"></label>
+    <label>Flughafen<input name="flughafen" placeholder="z.B. Frankfurt"></label>
+    <label>Typ<input name="typ" list="typen" placeholder="z.B. Valet-Parken"></label>
+    <label>Status<select name="status"></select></label>
+    <label class="full">Quelle (wo gefunden)<input name="quelle"></label>
+    <label class="full">Notizen<textarea name="notizen" rows="3"></textarea></label>
+    <div class="actions">
+      <button type="button" class="danger left" id="loeschen">Löschen</button>
+      <button type="button" id="abbrechen">Abbrechen</button>
+      <button type="submit" class="primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlgMail">
+  <div class="mailbox">
+    <h2>E-Mail an <span id="mailAnz"></span> Empfänger</h2>
+    <p class="muted">Absender: <span id="mailAbs"></span>. Jeder Empfänger bekommt eine eigene Mail. Platzhalter: {{name}}, {{flughafen}}</p>
+    <ul id="mailEmpf"></ul>
+    <p id="mailHinweis" class="warn"></p>
+    <div class="vorlagen">
+      <select id="mailVorlage"><option value="">Vorlage wählen …</option></select>
+      <button type="button" id="vorlageSpeichern">Als Vorlage speichern</button>
+      <button type="button" id="vorlageLoeschen" class="danger" disabled>Vorlage löschen</button>
+    </div>
+    <label>Betreff<input id="mailBetreff"></label>
+    <label>Plaintext<textarea id="mailText" rows="8"></textarea></label>
+    <div id="mailHtmlBox" hidden>
+      <label class="check"><input type="checkbox" id="mailHtmlAn" checked> HTML-Version der Vorlage mitsenden</label>
+      <p class="muted">Änderungen am Plaintext wirken nicht auf die HTML-Version. Bearbeiten unter „E-Mail-Vorlagen“.</p>
+      <iframe id="mailVorschau" class="vorschau" sandbox="" title="HTML-Vorschau"></iframe>
+    </div>
+    <p id="mailErgebnis"></p>
+    <div class="actions">
+      <button type="button" id="mailTest" class="left">Testmail an mich</button>
+      <button type="button" id="mailAbbrechen">Schließen</button>
+      <button type="button" id="mailSenden" class="primary">An Auswahl senden</button>
+    </div>
+  </div>
+</dialog>
+<datalist id="typen"></datalist>
+
+<script>
+const STATUS = ['Neu', 'Kontaktiert', 'Interessiert', 'Kunde', 'Kein Interesse'];
+let versand = [], mailcfg = {}, gewaehlt = new Set(), vorlagen = [], mailHtml = '', sichtbar = [];
+let daten = [], sortKey = 'name', sortDir = 1, aktuell = null;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Fluggäste pro Jahr in Mio. (ca., 2024) – Maß für die Bedeutung des Standorts
+const FLUGGAESTE = { 'Frankfurt': 61.6, 'München': 41.6, 'BER': 25.5, 'Düsseldorf': 20, 'Hamburg': 14.8, 'Köln/Bonn': 10, 'Stuttgart': 9.2,
+  'Hannover': 5.6, 'Nürnberg': 3.7, 'Dortmund': 3.2, 'Memmingen': 3, 'Leipzig/Halle': 2.3, 'Bremen': 2, 'Weeze': 1.6, 'Frankfurt-Hahn': 1.5,
+  'Karlsruhe/Baden-Baden': 1.3, 'Münster/Osnabrück': 1, 'Dresden': 1, 'Paderborn/Lippstadt': 0.75, 'Saarbrücken': 0.35, 'Friedrichshafen': 0.3,
+  'Erfurt-Weimar': 0.2, 'Rostock-Laage': 0.2, 'Lübeck': 0.07, 'Kassel': 0.06 };
+const groesse = (k) => Math.max(0, ...flughaefen(k).map((f) => FLUGGAESTE[f] || 0));
+const href = (u) => (/^https?:\/\//i.test(u) ? u : 'https://' + u);
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+  return r.json();
+}
+
+function fillSelect(sel, values) {
+  const cur = sel.value;
+  sel.length = 1;
+  values.forEach((v) => sel.add(new Option(v, v)));
+  sel.value = cur;
+}
+
+const datum = (d) => new Date(d).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const versandVon = (k) => versand.filter((v) => v.kundeId === k.id && !v.fehler && !v.test);
+// Vorlage eines Versands; ältere Einträge ohne vorlageId über den Betreff erkennen (wie im Server)
+const vorlageVon = (e) => e.vorlageId || (vorlagen.find((v) => v.betreff === e.betreff) || {}).id || '';
+const hatVorlage = (k, id) => Boolean(id) && versandVon(k).some((e) => vorlageVon(e) === id);
+const vorlagenVon = (k) => [...new Set(versandVon(k).map((e) => (vorlagen.find((v) => v.id === vorlageVon(e)) || {}).name || e.vorlageName || 'ohne Vorlage'))];
+// Zeitpunkt der letzten Öffnung (ISO-String) oder ''
+// Versand an k, eingeschränkt auf die im Filter gewählte Vorlage
+const versandImFilter = (k) => versandVon(k).filter((e) => !$('#fVorlage').value || vorlageVon(e) === $('#fVorlage').value);
+const zuletztOffen = (k) => versandImFilter(k).flatMap((v) => v.geoeffnet).sort().pop() || '';
+const vorlageName = (e) => (vorlagen.find((v) => v.id === vorlageVon(e)) || {}).name || e.vorlageName || 'ohne Vorlage';
+
+function versandZelle(k) {
+  const alle = versand.filter((v) => v.kundeId === k.id);
+  if (!alle.length) return '<span class="muted">–</span>';
+  const e = alle[alle.length - 1];
+  if (e.fehler) return `<span class="badge s-Kein" title="${esc(e.fehler)}">Fehler</span>`;
+  const fV = $('#fVorlage').value;
+  const opens = (fV ? versandImFilter(k) : alle).flatMap((v) => v.geoeffnet).sort();
+  // Je Vorlage: geöffnet ja/nein und wann zuletzt
+  const jeVorlage = new Map();
+  for (const v of versandVon(k)) jeVorlage.set(vorlageName(v), [...(jeVorlage.get(vorlageName(v)) || []), ...v.geoeffnet]);
+  const vorlagenZeilen = [...jeVorlage].map(([n, o]) => `<div class="muted">${esc(n)}: ${o.length ? `<strong>geöffnet ${o.length}×</strong>, zuletzt ${datum(o.sort().at(-1))}` : 'nicht geöffnet'}</div>`).join('');
+  const zeile = `<div class="muted">${e.test ? 'Test gesendet' : 'Gesendet'} ${datum(e.gesendet)}${alle.length > 1 ? ` (${alle.length}×)` : ''}</div>${vorlagenZeilen}`;
+  if (fV && !versandImFilter(k).length) return `<span class="badge">Vorlage nicht bekommen</span>${zeile}`;
+  if (opens.length) return `<span class="badge s-Interessiert">Geöffnet ${opens.length}×</span><div><strong>Zuletzt ${datum(opens[opens.length - 1])} Uhr</strong></div>${zeile}`;
+  return `<span class="badge">${e.tracking ? 'Nicht geöffnet' : 'Ohne Tracking'}</span>${zeile}`;
+}
+
+function auswahlZeigen() {
+  const b = $('#mailBtn');
+  b.textContent = `E-Mail senden (${gewaehlt.size})`;
+  b.disabled = !gewaehlt.size;
+  $('#auswahlLeeren').hidden = !gewaehlt.size;
+  const treffer = sichtbar.filter((k) => gewaehlt.has(k.id)).length;
+  $('#alleWaehlen').checked = sichtbar.length > 0 && treffer === sichtbar.length;
+  $('#alleWaehlen').indeterminate = treffer > 0 && treffer < sichtbar.length;
+}
+
+function flughaefen(k) {
+  return String(k.flughafen || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function render() {
+  const q = $('#suche').value.toLowerCase();
+  const flughafen = $('#fFlughafen').value, typ = $('#fTyp').value, status = $('#fStatus').value;
+  const ohneFrankfurt = $('#ohneFrankfurt').checked, fVersand = $('#fVersand').value, nurEmail = $('#nurEmail').checked, nurNeu = $('#nurNeu').checked, nurOffen = $('#nurOffen').checked;
+  const liste = daten
+    .filter((k) => (!flughafen || flughaefen(k).includes(flughafen)) && (!typ || k.typ === typ) && (!status || k.status === status))
+    .filter((k) => !nurEmail || k.email)
+    .filter((k) => !nurOffen || zuletztOffen(k))
+    .filter((k) => !nurNeu || !versandVon(k).length)
+    .filter((k) => !ohneFrankfurt || !(/frankfurt/i.test(k.ort || '') || flughaefen(k).includes('Frankfurt')))
+    .filter((k) => {
+      const v = versandImFilter(k);
+      const offen = v.some((e) => e.geoeffnet.length);
+      return !fVersand || (fVersand === 'offen' && !v.length) || (fVersand === 'gesendet' && v.length) || (fVersand === 'geoeffnet' && offen) || (fVersand === 'ungeoeffnet' && v.length && !offen);
+    })
+    .filter((k) => !q || [k.name, k.ort, k.flughafen, k.email, k.telefon, k.website, k.notizen, k.typ].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => sortDir * (sortKey === 'groesse' ? groesse(a) - groesse(b) || flughaefen(a).length - flughaefen(b).length : sortKey === 'geoeffnet' ? zuletztOffen(a).localeCompare(zuletztOffen(b)) : String(a[sortKey] || '').localeCompare(String(b[sortKey] || ''), 'de')));
+
+  // Interessenten, Kunden und Absagen nimmt der Kopf-Haken nicht mit, einzeln bleiben sie wählbar
+  sichtbar = liste.filter((k) => k.email && !['Interessiert', 'Kunde', 'Kein Interesse'].includes(k.status));
+  $('#rows').innerHTML = liste.map((k) => `
+    <tr>
+      <td><input type="checkbox" data-sel="${esc(k.id)}" ${gewaehlt.has(k.id) ? 'checked' : ''} ${k.email ? '' : 'disabled title="Keine E-Mail-Adresse"'}></td>
+      <td><strong>${esc(k.name)}</strong>${k.notizen ? `<div class="muted">${esc(k.notizen)}</div>` : ''}</td>
+      <td>${esc(k.flughafen)}</td>
+      <td style="white-space:nowrap" class="muted">${groesse(k) ? groesse(k).toLocaleString('de-DE') + ' Mio.' : '–'}</td>
+      <td>${esc(k.ort)}</td>
+      <td>${esc(k.typ)}</td>
+      <td>${k.email ? `<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>` : '<span class="muted">–</span>'}</td>
+      <td style="white-space:nowrap">${k.telefon ? `<a href="tel:${esc(k.telefon.replace(/[^\d+]/g, ''))}">${esc(k.telefon)}</a>` : '<span class="muted">–</span>'}</td>
+      <td>${k.website ? `<a href="${esc(href(k.website))}" target="_blank" rel="noopener">${esc(k.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : ''}</td>
+      <td><span class="badge s-${esc((k.status || '').split(' ')[0])}">${esc(k.status)}</span></td>
+      <td>${versandZelle(k)}</td>
+      <td><button data-id="${esc(k.id)}">Bearbeiten</button></td>
+    </tr>`).join('') || '<tr><td colspan="12" class="muted">Keine Einträge gefunden.</td></tr>';
+
+  const proStatus = STATUS.map((s) => `${s}: ${daten.filter((k) => k.status === s).length}`).join(' · ');
+  auswahlZeigen();
+  $('#stats').textContent = `${liste.length} von ${daten.length} Anbietern · ${proStatus}`;
+}
+
+async function laden() {
+  [daten, versand, vorlagen] = await Promise.all([api('GET', '/api/kunden'), api('GET', '/api/versand'), api('GET', '/api/vorlagen')]);
+  const uniq = (k) => [...new Set(daten.map((d) => d[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+  fillSelect($('#fFlughafen'), [...new Set(daten.flatMap(flughaefen))].sort((a, b) => a.localeCompare(b, 'de')));
+  fillSelect($('#fTyp'), uniq('typ'));
+  const fV = $('#fVorlage'), fVWert = fV.value;
+  fillSelect(fV, []);
+  vorlagen.forEach((v) => fV.add(new Option(v.name, v.id)));
+  fV.value = vorlagen.some((v) => v.id === fVWert) ? fVWert : '';
+  $('#typen').innerHTML = uniq('typ').map((t) => `<option>${esc(t)}</option>`).join('');
+  render();
+}
+
+function oeffnen(k) {
+  aktuell = k;
+  const f = $('#form');
+  f.reset();
+  $('#dlgTitel').textContent = k ? 'Anbieter bearbeiten' : 'Neuer Anbieter';
+  $('#loeschen').style.display = k ? '' : 'none';
+  if (k) for (const el of f.elements) if (el.name) el.value = k[el.name] || '';
+  if (!k) f.elements.status.value = 'Neu';
+  $('#dlg').showModal();
+}
+
+function csvExport() {
+  const cols = ['name', 'email', 'telefon', 'website', 'flughafen', 'ort', 'typ', 'status', 'notizen', 'quelle'];
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = '﻿' + [cols.join(';'), ...daten.map((k) => cols.map((c) => cell(k[c])).join(';'))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `parkingsoft-kunden-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+
+fillSelect($('#fStatus'), STATUS);
+$('#form').elements.status.innerHTML = STATUS.map((s) => `<option>${s}</option>`).join('');
+for (const id of ['ohneFrankfurt', 'nurEmail', 'nurNeu', 'nurOffen']) {
+  try { $('#' + id).checked = localStorage.getItem(id) === '1'; } catch {}
+  $('#' + id).addEventListener('change', (e) => {
+    try { localStorage.setItem(id, e.target.checked ? '1' : '0'); } catch {}
+  });
+}
+['#suche', '#fFlughafen', '#fTyp', '#fStatus', '#ohneFrankfurt', '#nurEmail', '#nurNeu', '#nurOffen', '#fVorlage', '#fVersand'].forEach((s) => $(s).addEventListener('input', render));
+$('#rows').addEventListener('change', (e) => {
+  const id = e.target.dataset.sel;
+  if (!id) return;
+  e.target.checked ? gewaehlt.add(id) : gewaehlt.delete(id);
+  auswahlZeigen();
+});
+
+function auswahlSetzen(an) {
+  sichtbar.forEach((k) => (an ? gewaehlt.add(k.id) : gewaehlt.delete(k.id)));
+  render();
+}
+
+async function vorlagenLaden(aktiv = '') {
+  vorlagen = await api('GET', '/api/vorlagen');
+  const sel = $('#mailVorlage');
+  fillSelect(sel, []);
+  vorlagen.forEach((v) => sel.add(new Option(v.name, v.id)));
+  sel.value = aktiv;
+  $('#vorlageLoeschen').disabled = !sel.value;
+}
+
+async function vorlageSpeichern() {
+  const betreff = $('#mailBetreff').value.trim(), text = $('#mailText').value.trim();
+  if (!betreff || !text) return alert('Bitte zuerst Betreff und Text ausfüllen.');
+  const bisher = vorlagen.find((v) => v.id === $('#mailVorlage').value);
+  const name = (prompt('Name der Vorlage:', bisher ? bisher.name : '') || '').trim();
+  if (!name) return;
+  const gleich = vorlagen.find((v) => v.name.toLowerCase() === name.toLowerCase());
+  if (gleich && !confirm(`Vorlage „${gleich.name}“ überschreiben?`)) return;
+  try {
+    const v = await api('POST', '/api/vorlagen', { name, betreff, text, html: mailHtml });
+    await vorlagenLaden(v.id);
+  } catch (err) { alert(err.message); }
+}
+
+async function vorlageLoeschen() {
+  const v = vorlagen.find((x) => x.id === $('#mailVorlage').value);
+  if (!v || !confirm(`Vorlage „${v.name}“ löschen?`)) return;
+  await api('DELETE', `/api/vorlagen/${v.id}`, {});
+  await vorlagenLaden();
+}
+
+async function mailOeffnen() {
+  mailcfg = await api('GET', '/api/mailconfig');
+  await vorlagenLaden();
+  mailHtmlSetzen('');
+  empfaengerZeigen();
+  $('#mailAbs').textContent = mailcfg.absender || '–';
+  $('#mailErgebnis').textContent = '';
+  try {
+    $('#mailBetreff').value = localStorage.getItem('mailBetreff') || '';
+    $('#mailText').value = localStorage.getItem('mailText') || '';
+  } catch {}
+  $('#dlgMail').showModal();
+}
+
+// Vorlage, die gerade im Sendefenster steht: ausgewählt oder am Betreff erkannt (wie im Server)
+const mailVorlageId = () => $('#mailVorlage').value || (vorlagen.find((v) => v.betreff === $('#mailBetreff').value.trim()) || {}).id || '';
+// Empfänger, die die aktuelle Vorlage noch nicht bekommen haben
+const mailZiele = () => daten.filter((k) => gewaehlt.has(k.id) && !hatVorlage(k, mailVorlageId()));
+
+function empfaengerZeigen() {
+  const vId = mailVorlageId(), vName = (vorlagen.find((v) => v.id === vId) || {}).name;
+  const ziele = daten.filter((k) => gewaehlt.has(k.id));
+  const doppelt = ziele.filter((k) => hatVorlage(k, vId));
+  const schon = ziele.filter((k) => versandVon(k).length && !hatVorlage(k, vId));
+  $('#mailEmpf').innerHTML = ziele.map((k) => `<li${hatVorlage(k, vId) ? ' style="text-decoration:line-through;opacity:.6"' : ''}>${esc(k.name)} – ${esc(k.email)}${hatVorlage(k, vId) ? ' <strong>(hat diese Vorlage schon, wird übersprungen)</strong>' : versandVon(k).length ? ` <span class="muted">(schon bekommen: ${esc(vorlagenVon(k).join(', '))})</span>` : ''}</li>`).join('');
+  $('#mailAnz').textContent = ziele.length - doppelt.length;
+  const hinweise = [];
+  if (mailcfg.testModus) hinweise.push(`TESTMODUS: Alle Mails gehen an ${mailcfg.testModus}, nicht an die Kunden.`);
+  if (!mailcfg.bereit) hinweise.push('Versand noch nicht möglich: NUXT_SMTP_PASS in der Datei .env eintragen.');
+  if (!mailcfg.tracking) hinweise.push('Öffnungserkennung aus: NUXT_TRACKING_URL ist nicht gesetzt.');
+  if (mailcfg.trackingFehler) hinweise.push(`Öffnungen können gerade nicht abgerufen werden: ${mailcfg.trackingFehler}.`);
+  if (doppelt.length) hinweise.push(`${doppelt.length} Empfänger haben „${vName}“ schon bekommen und werden übersprungen.`);
+  if (schon.length) hinweise.push(`${schon.length} Empfänger haben schon eine andere Vorlage bekommen.`);
+  $('#mailHinweis').textContent = hinweise.join(' ');
+}
+
+async function mailSenden(pfad, ids) {
+  const betreff = $('#mailBetreff').value, text = $('#mailText').value;
+  try {
+    localStorage.setItem('mailBetreff', betreff);
+    localStorage.setItem('mailText', text);
+  } catch {}
+  const knoepfe = [$('#mailSenden'), $('#mailTest')];
+  knoepfe.forEach((b) => (b.disabled = true));
+  $('#mailErgebnis').textContent = 'Wird gesendet …';
+  const zeigen = setInterval(async () => {
+    try {
+      const f = await api('GET', '/api/fortschritt');
+      if (f.laeuft) $('#mailErgebnis').textContent = `Wird gesendet … ${f.gesendet} von ${f.gesamt}${f.fehler ? ` (${f.fehler} Fehler)` : ''}. Bitte die App laufen lassen.`;
+    } catch {}
+  }, 1500);
+  try {
+    const erg = await api('POST', pfad, { ids, betreff, text, html: $('#mailHtmlAn').checked ? mailHtml : '', vorlageId: $('#mailVorlage').value });
+    const fehler = erg.filter((e) => e.fehler), weg = erg.filter((e) => e.uebersprungen);
+    $('#mailErgebnis').textContent = `${erg.length - fehler.length - weg.length} gesendet, ${fehler.length} Fehler${weg.length ? `, ${weg.length} übersprungen (Vorlage schon bekommen)` : ''}.${fehler.map((e) => ` ${e.email}: ${e.fehler}`).join('')}`;
+    if (ids) {
+      const ok = new Set(erg.filter((e) => !e.fehler && !e.uebersprungen).map((e) => e.email));
+      daten.forEach((k) => { if (ok.has(k.email)) gewaehlt.delete(k.id); });
+      auswahlZeigen();
+    }
+    await laden();
+  } catch (err) {
+    $('#mailErgebnis').textContent = err.message;
+  }
+  clearInterval(zeigen);
+  knoepfe.forEach((b) => (b.disabled = false));
+}
+
+let vAktuell = null;
+
+function vorlagenListe() {
+  $('#vListe').innerHTML = vorlagen.map((v) => `<button data-v="${esc(v.id)}" class="${vAktuell === v.id ? 'aktiv' : ''}">${esc(v.name)}</button>`).join('') || '<span class="muted">Noch keine Vorlagen.</span>';
+}
+
+function vorschauZeigen() {
+  const html = $('#vHtml').value.trim();
+  $('#vVorschauBox').hidden = !html;
+  $('#vVorschau').srcdoc = html;
+}
+
+function mailHtmlSetzen(html) {
+  mailHtml = html || '';
+  $('#mailHtmlBox').hidden = !mailHtml;
+  $('#mailHtmlAn').checked = true;
+  $('#mailVorschau').srcdoc = mailHtml;
+}
+
+function vorlageBearbeiten(v) {
+  vAktuell = v ? v.id : null;
+  $('#vTitel').textContent = v ? 'Vorlage bearbeiten' : 'Neue Vorlage';
+  $('#vName').value = v ? v.name : '';
+  $('#vBetreff').value = v ? v.betreff : '';
+  $('#vText').value = v ? v.text : '';
+  $('#vHtml').value = v ? v.html || '' : '';
+  vorschauZeigen();
+  $('#vLoeschen').hidden = !v;
+  vorlagenListe();
+}
+
+async function ansicht(name) {
+  const istVorlagen = name === 'vorlagen';
+  $('#viewAnbieter').hidden = istVorlagen;
+  $('#viewVorlagen').hidden = !istVorlagen;
+  $('#stats').hidden = istVorlagen;
+  $('#navAnbieter').classList.toggle('aktiv', !istVorlagen);
+  $('#navVorlagen').classList.toggle('aktiv', istVorlagen);
+  history.replaceState(null, '', istVorlagen ? '#vorlagen' : '#');
+  if (istVorlagen) {
+    await vorlagenLaden();
+    vorlageBearbeiten(vorlagen.find((v) => v.id === vAktuell) || vorlagen[0]);
+  }
+}
+
+$('#navAnbieter').onclick = () => ansicht('anbieter');
+$('#navVorlagen').onclick = () => ansicht('vorlagen');
+$('#vHtml').addEventListener('input', vorschauZeigen);
+$('#vNeu').onclick = () => vorlageBearbeiten(null);
+$('#vListe').onclick = (e) => {
+  const v = vorlagen.find((x) => x.id === e.target.dataset.v);
+  if (v) vorlageBearbeiten(v);
+};
+$('#vSpeichern').onclick = async () => {
+  const body = { name: $('#vName').value, betreff: $('#vBetreff').value, text: $('#vText').value, html: $('#vHtml').value };
+  const gleich = vorlagen.find((v) => v.name.toLowerCase() === body.name.trim().toLowerCase());
+  if (!vAktuell && gleich) return alert('Eine Vorlage mit diesem Namen gibt es schon.');
+  try {
+    const v = await api(vAktuell ? 'PUT' : 'POST', vAktuell ? `/api/vorlagen/${vAktuell}` : '/api/vorlagen', body);
+    await vorlagenLaden();
+    vorlageBearbeiten(v);
+  } catch (err) { alert(err.message); }
+};
+$('#vLoeschen').onclick = async () => {
+  const v = vorlagen.find((x) => x.id === vAktuell);
+  if (!v || !confirm(`Vorlage „${v.name}“ löschen?`)) return;
+  await api('DELETE', `/api/vorlagen/${v.id}`, {});
+  await vorlagenLaden();
+  vorlageBearbeiten(vorlagen[0]);
+};
+ansicht(location.hash === '#vorlagen' ? 'vorlagen' : 'anbieter');
+
+$('#alleWaehlen').addEventListener('change', (e) => auswahlSetzen(e.target.checked));
+$('#auswahlLeeren').onclick = () => { gewaehlt.clear(); render(); };
+$('#mailBtn').onclick = mailOeffnen;
+$('#vorlageSpeichern').onclick = vorlageSpeichern;
+$('#vorlageLoeschen').onclick = vorlageLoeschen;
+$('#mailVorlage').onchange = (e) => {
+  const v = vorlagen.find((x) => x.id === e.target.value);
+  $('#vorlageLoeschen').disabled = !v;
+  mailHtmlSetzen(v ? v.html : '');
+  if (v) {
+    $('#mailBetreff').value = v.betreff;
+    $('#mailText').value = v.text;
+  }
+  empfaengerZeigen();
+};
+$('#mailBetreff').addEventListener('input', empfaengerZeigen);
+$('#mailAbbrechen').onclick = () => $('#dlgMail').close();
+$('#mailTest').onclick = () => mailSenden('/api/testmail');
+$('#mailSenden').onclick = () => {
+  const ids = mailZiele().map((k) => k.id);
+  if (!ids.length) return alert('Alle ausgewählten Empfänger haben diese Vorlage schon bekommen.');
+  const frage = mailcfg.testModus ? `TESTMODUS: ${ids.length} Mail(s) gehen nur an ${mailcfg.testModus}. Senden?` : `Jetzt ${ids.length} einzelne E-Mails an echte Empfänger senden? Das dauert etwa ${Math.ceil(ids.length * 3 / 60)} Minute(n), bitte die App währenddessen laufen lassen.`;
+  if (confirm(frage)) mailSenden('/api/senden', ids);
+};
+setInterval(async () => {
+  if ($('#dlg').open || $('#dlgMail').open) return;
+  versand = await api('GET', '/api/versand');
+  render();
+}, 30000);
+$('#neu').onclick = () => oeffnen(null);
+$('#csv').onclick = csvExport;
+$('#abbrechen').onclick = () => $('#dlg').close();
+$('#rows').onclick = (e) => { const id = e.target.dataset.id; if (id) oeffnen(daten.find((k) => k.id === id)); };
+document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => {
+  sortDir = sortKey === th.dataset.k ? -sortDir : th.dataset.k === 'geoeffnet' ? -1 : 1; sortKey = th.dataset.k; render();
+});
+$('#form').onsubmit = async (e) => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  try {
+    aktuell ? await api('PUT', `/api/kunden/${aktuell.id}`, body) : await api('POST', '/api/kunden', body);
+    $('#dlg').close();
+    laden();
+  } catch (err) { alert(err.message); }
+};
+$('#loeschen').onclick = async () => {
+  if (!aktuell || !confirm(`„${aktuell.name}“ wirklich löschen?`)) return;
+  await api('DELETE', `/api/kunden/${aktuell.id}`);
+  $('#dlg').close();
+  laden();
+};
+laden();
+</script>
+</body>
+</html>
