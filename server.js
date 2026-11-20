@@ -72,6 +72,7 @@ const EINSTELLUNGEN = [
   { key: 'NUXT_SMTP_HOST' }, { key: 'NUXT_SMTP_PORT' }, { key: 'NUXT_SMTP_USER' }, { key: 'NUXT_SMTP_PASS', geheim: true },
   { key: 'NUXT_SMTP_FROM_NAME' }, { key: 'NUXT_CONTACT_TO' }, { key: 'NUXT_KOPIE_AN' },
   { key: 'NUXT_TRACKING_URL' }, { key: 'NUXT_TRACKING_TOKEN', geheim: true }, { key: 'NUXT_TEST_EMPFAENGER' },
+  { key: 'NUXT_AKTION_TOKEN', geheim: true },
 ];
 
 function envDatei() {
@@ -289,6 +290,28 @@ const server = http.createServer(async (req, res) => {
     auth.erfolg(ip);
     auth.anmelden(res, req, cfg, b);
     return send(res, 200, { benutzer: b.benutzer });
+  }
+
+  // Anmeldungen zur Website-Aktion: kommen vom Website-Server, geschützt mit dem Aktions-Token
+  if (url.pathname === '/api/aktion' && req.method === 'POST') {
+    const soll = Buffer.from(String(cfg.NUXT_AKTION_TOKEN || ''));
+    const ist = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!soll.length || soll.length !== ist.length || !crypto.timingSafeEqual(soll, ist)) return send(res, 401, { error: 'Nicht erlaubt' });
+    let body;
+    try { body = await readBody(req); } catch { return send(res, 400, { error: 'Ungültige Anfrage' }); }
+    const firma = String(body.firma || '').trim().slice(0, 100);
+    const email = String(body.email || '').trim().slice(0, 200);
+    if (firma.length < 2 || !EMAIL.test(email)) return send(res, 400, { error: 'Firma und E-Mail sind Pflicht' });
+    const list = load();
+    const notiz = `Aktion 2 Monate kostenlos: angemeldet am ${new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}, Einwilligung erteilt.`;
+    const vorhanden = list.find((k) => (k.email || '').toLowerCase() === email.toLowerCase());
+    if (vorhanden) {
+      Object.assign(vorhanden, { status: 'Interessiert', notizen: [vorhanden.notizen, notiz].filter(Boolean).join('\n'), geaendert: new Date().toISOString() });
+    } else {
+      list.push({ id: crypto.randomUUID(), ...clean({ name: firma, email, status: 'Interessiert', notizen: notiz, quelle: 'Website-Aktion' }), erstellt: new Date().toISOString() });
+    }
+    save(list);
+    return send(res, 200, { ok: true });
   }
 
   if (url.pathname === '/login' || url.pathname === '/login.html') {
